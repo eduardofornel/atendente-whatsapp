@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",              // gera código compatível com Node >= 14
+    "module": "commonjs",            // para que o Node consiga importar via require()/import
+    "outDir": "./dist",              // pasta de saída dos .js compilados
+    "rootDir": "./src",              // onde estão seus .ts
+    "strict": true,                  // ativa verificações estritas
+    "esModuleInterop": true,         // para importar default de bibliotecas CommonJS
+    "skipLibCheck": true             // evita checar .d.ts de node_modules
+  },
+  "include": ["src/**/*.ts"],        // só compila .ts dentro de src
+  "exclude": ["node_modules"]        // ignora dependências
+}
