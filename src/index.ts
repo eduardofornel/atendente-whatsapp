@@ -1,5 +1,7 @@
-import { Client, LocalAuth, Message, Chat, Contact } from 'whatsapp-web.js';
+import { Client, LocalAuth, Message, Chat, Contact, MessageMedia } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
+import path from 'path';
+import fs from 'fs';
 
 // Inicia o cliente com sessão persistente
 const client = new Client({
@@ -43,14 +45,14 @@ client.on('message', async (msg: Message) => {
   }
 
   // Se usuário digitar /menu a qualquer momento
-  if (text.toLowerCase() === '/menu') {
+  if (text.toLowerCase().match(/^(menu)$/i)) {
     await sendMenu(msg);
     chatState.set(chatId, 'aguardando_opcao');
     return;
   }
 
   // Saudação inicial
-  if (/^(oi|olá|ola|dia|tarde|noite)$/i.test(text)) {
+  if (msg.body.toLowerCase().match(/^(oi|olá|ola|dia|tarde|noite)$/i)) {
     await sendWelcomeMenu(msg);
     chatState.set(chatId, 'aguardando_opcao');
     return;
@@ -104,33 +106,49 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
       resposta =
         `*Modalidades do CT*:\n- Muay Thai, Boxe, Jiu Jitsu, Capoeira, Treino Funcional\n` +
         `*Unidades*:\n• Saraiva: Rua Tapajós, 767\n• Santa Mônica: Rua José Carrijo, 195\n` +
-        `Atendemos todos os níveis: iniciantes a competidores profissionais.`;
+        `Atendemos todos os níveis: iniciantes a competidores profissionais.\n\n` +
+        `Se quiser ver as opções novamente é só digitar "menu"😉`;
       break;
     case '2':
+      const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
+      const media = MessageMedia.fromFilePath(mediaPath);
       resposta =
         `*Aula Experimental*:\nPerfeito! 😃\n` +
-        `Informe seus dias e períodos de preferência.\n` +
-        `Se quiser ver a planilha de horários, digite *4* ou */menu*.`;
+        `Quando ficaria melhor pra você?\n` +
+        `Pra te ajudar, vou te mandar a planilha de horários, só um instante.\n\n` +
+        `Se quiser voltar ao menu é só digitar "menu"😉 `;
+      await chat.sendMessage(media);
+      await chat.markUnread()
       break;
     case '3':
       resposta =
         `*Planos Disponíveis*:\n- Iniciante (R$99,00): 1 aula/semana\n` +
         `- Lutador (R$150,00): até 3 aulas/semana + descontos\n` +
         `- Campeão (R$260,00): ilimitado + 1 personal/mês + descontos familiares\n` +
-        `- Universitário (R$79,90): 4 aulas/semana + descontos (exclusivo UFU)`;
+        `- Universitário (R$79,90): 4 aulas/semana + descontos (exclusivo UFU)\n\n` +
+        `Me conta qual plano te agrada mais\n\n` +
+        `Se quiser ver as opções novamente é só digitar "menu"😉`;
       break;
-    case '4':
-      resposta =
-        `*Planilha de Horários*:\n` +
-        `• Saraiva: https://link.exemplo/saraiva-horarios\n` +
-        `• Santa Mônica: https://link.exemplo/santamonica-horarios`;
+    case '4': {
+      const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
+      if (fs.existsSync(mediaPath)) {
+        const media = MessageMedia.fromFilePath(mediaPath);
+        await chat.sendMessage('*Segue a planilha de horários em PDF:*');
+        await chat.sendMessage(media);
+      } else {
+        await chat.sendMessage('⚠️ Arquivo de horários não encontrado no servidor.');
+      }
       break;
+    }
+
     case '5':
       resposta =
         `*Pagamentos*:\n` +
         `Todos os pagamentos devem ser feitos para:\n` +
         `CNPJ: 58.656.721/0001-34\n` +
-        `Titular: João Pedro Alves Santana (Banco Sicred)`;
+        `Titular: João Pedro Alves Santana (Banco Sicred)\n\n` +
+        `Se quiser ver as opções novamente é só digitar "menu"😉`;
+      await chat.markUnread()
       break;
     case '0':
       resposta = `Encerrando atendimento. Se precisar de algo mais, digite /menu.`;
