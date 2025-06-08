@@ -1,3 +1,12 @@
 node_modules/
-**/node_modules/
-**/.local-chromium/
+dist/
+
+.webwebjs_auth/
+.webwebjs_cache/
+sessions/
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+*.code-workspace
