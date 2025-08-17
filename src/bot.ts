@@ -16,7 +16,9 @@ const client = new Client({
 const delay = (ms: number): Promise<void> => new Promise(res => setTimeout(res, ms));
 
 // Mapeia estado de cada chat (aguardando menu, etc.)
-const chatState: Map<string, 'aguardando_opcao' | 'normal'> = new Map();
+type ChatMode = 'normal' | 'aguardando_opcao' | 'aguardando_plano';
+const chatState: Map<string, ChatMode> = new Map();
+
 
 // Evento QR
 client.on('qr', (qr: string) => {
@@ -36,6 +38,39 @@ client.on('message', async (msg: Message) => {
 
   const chatId = msg.from;
   const text = msg.body.trim();
+  const estadoAtual = chatState.get(chatId) ?? 'normal';
+  const lower = text.toLowerCase();
+
+
+  if (estadoAtual === 'aguardando_plano') {
+    const plano = lower;
+
+    if (/(iniciante)/.test(plano)) {
+      await msg.reply('Boa! ✅ Plano *Iniciante* escolhido. Posso te passar os próximos passos de matrícula?');
+      chatState.set(chatId, 'normal');
+      return;
+    }
+    if (/(lutador)/.test(plano)) {
+      await msg.reply('Top! ✅ Plano *Lutador* selecionado. Quer que eu confirme os horários disponíveis pra você?');
+      chatState.set(chatId, 'normal');
+      return;
+    }
+    if (/(campe(ã|a)o|campeao)/.test(plano)) {
+      await msg.reply('Monstro! ✅ Plano *Campeão* é o mais completo. Quer que eu te passe as formas de pagamento?');
+      chatState.set(chatId, 'normal');
+      return;
+    }
+    if (/(universit(á|a)rio|universitario)/.test(plano)) {
+      await msg.reply('Show! ✅ Plano *Universitário*. Você estuda na UFU? Posso validar a carteirinha quando vier.');
+      chatState.set(chatId, 'normal');
+      return;
+    }
+
+    // Não entendeu — continua aguardando
+    await msg.reply('Não entendi 🤔. Responda com o *nome* de um dos planos: Iniciante, Lutador, Campeão ou Universitário. (ou digite *menu* para voltar)');
+    return;
+  }
+
 
   // Se estiver aguardando opção de menu, processa aqui
   if (chatState.get(chatId) === 'aguardando_opcao') {
@@ -43,7 +78,7 @@ client.on('message', async (msg: Message) => {
       await handleMenuOption(msg, text);
       chatState.set(chatId, 'normal');
     } else {
-      await msg.reply('Por favor digite um número de 0 a 5 ou /menu para ver o menu.');
+      await msg.reply('Por favor digite um número de 0 a 5 ou menu para ver o menu.');
     }
     return;
   }
@@ -74,7 +109,7 @@ async function sendWelcomeMenu(msg: Message): Promise<void> {
   await delay(800);
   await chat.sendMessage(
     `Olá ${nome}, bem-vindo ao CT Jhonny Alves! 🤖\n` +
-    `Serei seu assistente virtual. Se quiser ver o menu novamente, digite /menu.\n\n` +
+    `Serei seu assistente virtual. Se quiser ver o menu novamente, digite menu.\n\n` +
     `1 – Conhecer o CT\n` +
     `2 – Aula experimental\n` +
     `3 – Planos\n` +
@@ -101,6 +136,7 @@ async function sendMenu(msg: Message): Promise<void> {
 // Processa escolha do menu
 async function handleMenuOption(msg: Message, option: string): Promise<void> {
   const chat: Chat = await msg.getChat();
+  const chatId = msg.from
   let resposta = '';
 
   switch (option) {
@@ -130,6 +166,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `- Universitário (R$79,90): 4 aulas/semana + descontos (exclusivo UFU)\n\n` +
         `Me conta qual plano te agrada mais\n\n` +
         `Se quiser ver as opções novamente é só digitar "menu"😉`;
+      chatState.set(chatId, 'aguardando_plano');
       break;
     case '4': {
       const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
@@ -153,7 +190,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
       await chat.markUnread()
       break;
     case '0':
-      resposta = `Encerrando atendimento. Se precisar de algo mais, digite /menu.`;
+      resposta = `Encerrando atendimento. Se precisar de algo mais, digite menu.`;
       break;
   }
 
