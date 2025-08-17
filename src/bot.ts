@@ -5,7 +5,11 @@ import fs from 'fs';
 
 // Inicia o cliente com sessão persistente
 const client = new Client({
-  authStrategy: new LocalAuth()
+  authStrategy: new LocalAuth(),
+  puppeteer: {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  }
 });
 
 // Ajuda a criar delays
