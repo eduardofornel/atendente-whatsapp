@@ -247,9 +247,8 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `Se quiser voltar ao menu é só digitar *menu* 😉`;
       await chat.sendMessage(resposta);
       await sendHorarios(chat);
-      if (typeof (chat as any).markUnread === 'function') {
-        await (chat as any).markUnread();
-      }
+      await chat.markUnread();
+
       chatState.set(chatId, 'normal');
       break;
     }
