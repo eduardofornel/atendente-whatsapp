@@ -2,8 +2,10 @@ node_modules/
 dist/
 
 .webwebjs_auth/
-.webwebjs_cache/
 sessions/
+
+.package-lock.json
+.package.json
 
 .DS_Store
 Thumbs.db
