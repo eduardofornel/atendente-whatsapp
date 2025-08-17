@@ -99,11 +99,13 @@ client.on('message', async (msg: Message) => {
       );
       await sendHorarios(chat);
       await chat.sendMessage(PAGAMENTOS);
+      await chat.markUnread();
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
       await chat.sendMessage(PAGAMENTOS);
+      await chat.markUnread();
       await backToMenu(msg);
       return;
     }
@@ -115,11 +117,13 @@ client.on('message', async (msg: Message) => {
     if (isAffirmative(lower)) {
       await sendHorarios(chat);
       await chat.sendMessage(PAGAMENTOS);
+      await chat.markUnread();
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
       await chat.sendMessage(PAGAMENTOS);
+      await chat.markUnread();
       await backToMenu(msg);
       return;
     }
@@ -131,11 +135,13 @@ client.on('message', async (msg: Message) => {
     if (isAffirmative(lower)) {
       await sendHorarios(chat);
       await chat.sendMessage(PAGAMENTOS);
+      await chat.markUnread();
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
       await chat.sendMessage(PAGAMENTOS);
+      await chat.markUnread();
       await backToMenu(msg);
       return;
     }
@@ -146,17 +152,17 @@ client.on('message', async (msg: Message) => {
   // -------- FLUXO DE ESCOLHA DO PLANO (NOMES) --------
   if (estadoAtual === 'aguardando_plano') {
     if (/(iniciante)/i.test(lower)) {
-      await msg.reply('Curtiu o *Iniciante*. Quer marcar uma *aula experimental*? (responda *sim* ou *não*)');
+      await msg.reply('Curtiu o *Iniciante*. Quer marcar uma *aula experimental*?');
       chatState.set(chatId, 'confirma_iniciante');
       return;
     }
     if (/(lutador)/i.test(lower)) {
-      await msg.reply('Show! Plano *Lutador*. Quer que eu já te mande os *horários*? (sim/não)');
+      await msg.reply('Show! Plano *Lutador*. Quer que eu já te mande os *horários*?');
       chatState.set(chatId, 'confirma_lutador');
       return;
     }
     if (/(campe(ã|a)o|campeao)/i.test(lower)) {
-      await msg.reply('Top! Plano *Campeão*. Quer que eu te mande a *planilha de horários*? (sim/não)');
+      await msg.reply('Top! Plano *Campeão*. Quer que eu te mande a *planilha de horários*?');
       chatState.set(chatId, 'confirma_campeao');
       return;
     }
