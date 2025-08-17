@@ -2,6 +2,7 @@ node_modules
 dist/
 
 .webwebjs_cache/
+.webwebjs_auth/
 sessions/
 
 .package-lock.json
