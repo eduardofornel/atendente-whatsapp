@@ -218,6 +218,7 @@ async function sendMenu(msg: Message): Promise<void> {
     `3 – Planos\n` +
     `4 – Horários\n` +
     `5 – Pagamentos\n` +
+    `6 – Atendimento Pessoal \n` +
     `0 – Encerrar atendimento`
   );
 }
@@ -233,6 +234,8 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `*Modalidades do CT*:\n- Muay Thai, Boxe, Jiu Jitsu, Capoeira, Treino Funcional\n` +
         `*Unidades*:\n• Saraiva: Rua Tapajós, 767\n• Santa Mônica: Rua José Carrijo, 195\n` +
         `Atendemos todos os níveis: iniciantes a competidores profissionais.\n\n` +
+        `Temos modalidades específicas para mulheres e crianças também\n\n` +
+        `Siga nossa página no instagram @ctjhonnyalves (https://www.instagram.com/ctjhonnyalves/)` +
         `Se quiser ver as opções novamente é só digitar *menu* 😉`;
       await chat.sendMessage(resposta);
       chatState.set(chatId, 'normal');
@@ -255,6 +258,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
 
     case '3': {
       const resposta =
+        `Treine a hora que quiser!!! Aqui no CT trabalhamos com um sistema de agendamento para te trazer mais conforto e flexibilidade \n\n` +
         `*Planos Disponíveis*:\n- Iniciante (R$99,00): 1 aula/semana\n` +
         `- Lutador (R$150,00): até 3 aulas/semana + descontos\n` +
         `- Campeão (R$260,00): ilimitado + 1 personal/mês + descontos familiares\n` +
@@ -276,6 +280,11 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
       await chat.sendMessage(PAGAMENTOS);
       chatState.set(chatId, 'normal');
       break;
+    }
+
+    case '6': {
+      chatState.set(chatId, 'normal')
+      await chat.markUnread()
     }
 
     case '0': {
