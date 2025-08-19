@@ -236,7 +236,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `*Unidades*:\n• Saraiva: Rua Tapajós, 767\n• Santa Mônica: Rua José Carrijo, 195\n` +
         `Atendemos todos os níveis: iniciantes a competidores profissionais.\n\n` +
         `Temos modalidades específicas para mulheres e crianças também\n\n` +
-        `Siga nossa página no instagram @ctjhonnyalves (https://www.instagram.com/ctjhonnyalves)\n` +
+        `Siga nossa página no instagram @ctjhonnyalves (https://www.instagram.com/ctjhonnyalves)\n\n` +
         `Se quiser ver as opções novamente é só digitar *menu* 😉`;
       await chat.sendMessage(resposta);
       chatState.set(chatId, 'normal');
