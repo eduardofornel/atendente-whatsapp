@@ -63,12 +63,7 @@ async function backToMenu(msg: Message) {
   chatState.set(msg.from, 'aguardando_opcao');
 }
 
-// ---------- EVENTOS ----------
-let qrShown = false;
-
 client.on('qr', (qr: string) => {
-  if (qrShown) return;
-  qrShown = true;
 
   console.log('QR recebido, escaneie para autenticar:');
   qrcode.generate(qr, { small: true });
