@@ -173,10 +173,10 @@ client.on('message', async (msg: Message) => {
 
   // -------- FLUXO DE ESCOLHA DO MENU (NÚMEROS) --------
   if (estadoAtual === 'aguardando_opcao') {
-    if (/^[0-5]$/.test(text)) {
+    if (/^[0-6]$/.test(text)) {
       await handleMenuOption(msg, text); // esta função também ajusta o estado
     } else {
-      await msg.reply('Por favor, digite um número de 0 a 5 ou *menu* para ver o menu.');
+      await msg.reply('Por favor, digite um número de 0 a 6 ou *menu* para ver o menu.');
     }
     return;
   }
@@ -205,6 +205,7 @@ async function sendWelcomeMenu(msg: Message): Promise<void> {
     `3 – Planos\n` +
     `4 – Horários\n` +
     `5 – Pagamentos\n` +
+    `6 – Atendimento Pessoal \n` +
     `0 – Encerrar atendimento`
   );
 }
@@ -283,6 +284,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
     }
 
     case '6': {
+      await chat.sendMessage('Ok! Assim que possível, um de nossos professores irá entrar em contato')
       chatState.set(chatId, 'normal')
       await chat.markUnread()
     }
