@@ -20,7 +20,6 @@ const client = new Client({
   puppeteer: {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    // Se estiver usando puppeteer-core + Chrome do sistema, defina:
     // executablePath: '/usr/bin/google-chrome-stable'
   }
 });
@@ -42,11 +41,6 @@ const isNegative = (t: string) =>
   /\b(n[ãa]o|nao|n|agora n[ãa]o|depois|prefiro n[ãa]o|negativo)\b/i.test(t);
 
 async function sendHorarios(chat: Chat) {
-  // IMPORTANTE: garanta que o horarios.pdf esteja UMA pasta acima do dist/
-  // Ex.: projeto/
-  //  ├─ src/
-  //  ├─ dist/
-  //  └─ horarios.pdf
   const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
   if (fs.existsSync(mediaPath)) {
     const media = MessageMedia.fromFilePath(mediaPath);
@@ -63,8 +57,8 @@ async function backToMenu(msg: Message) {
   chatState.set(msg.from, 'aguardando_opcao');
 }
 
+// ---------- BOOT ----------
 client.on('qr', (qr: string) => {
-
   console.log('QR recebido, escaneie para autenticar:');
   qrcode.generate(qr, { small: true });
 });
@@ -73,6 +67,7 @@ client.on('ready', () => {
   console.log('Robô pronto para funcionar');
 });
 
+// ---------- CORE: TODA MENSAGEM DISPARA SAUDAÇÃO ----------
 client.on('message', async (msg: Message) => {
   // Somente em chats privados
   if (!msg.from.endsWith('@c.us')) return;
@@ -80,8 +75,15 @@ client.on('message', async (msg: Message) => {
   const chatId = msg.from;
   const text = msg.body.trim();
   const lower = text.toLowerCase();
-  const estadoAtual = chatState.get(chatId) ?? 'normal';
   const chat: Chat = await msg.getChat();
+
+  await sendWelcomeMenu(msg);
+
+  let estadoAtual = chatState.get(chatId) ?? 'normal';
+  if (estadoAtual === 'normal') {
+    chatState.set(chatId, 'aguardando_opcao');
+    estadoAtual = 'aguardando_opcao';
+  }
 
   // /menu a qualquer momento
   if (/^(menu)$/.test(lower)) {
@@ -180,13 +182,6 @@ client.on('message', async (msg: Message) => {
     }
     return;
   }
-
-  // -------- SAUDAÇÃO INICIAL --------
-  if (/^(oi|olá|ola|dia|tarde|noite|jonny|jhony|jony|jhonny)$/.test(lower)) {
-    await sendWelcomeMenu(msg);
-    chatState.set(chatId, 'aguardando_opcao');
-    return;
-  }
 });
 
 // ---------- MENSAGENS ----------
@@ -196,7 +191,7 @@ async function sendWelcomeMenu(msg: Message): Promise<void> {
   const nome = contact.pushname?.split(' ')[0] || 'amigo';
 
   await chat.sendStateTyping();
-  await delay(800);
+  await delay(300); // mais rápido, pois será enviado sempre
   await chat.sendMessage(
     `Olá ${nome}, bem-vindo ao CT Jhonny Alves! 🤖\n` +
     `Serei seu assistente virtual. Se quiser ver o menu novamente, digite *menu*.\n\n` +
@@ -252,7 +247,6 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
       await chat.sendMessage(resposta);
       await sendHorarios(chat);
       await chat.markUnread();
-
       chatState.set(chatId, 'normal');
       break;
     }
@@ -284,9 +278,10 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
     }
 
     case '6': {
-      await chat.sendMessage('Ok! Assim que possível, um de nossos professores irá entrar em contato')
-      chatState.set(chatId, 'normal')
-      await chat.markUnread()
+      await chat.sendMessage('Ok! Assim que possível, um de nossos professores irá entrar em contato');
+      chatState.set(chatId, 'normal');
+      await chat.markUnread();
+      break; // <-- corrigido
     }
 
     case '0': {
