@@ -13,6 +13,8 @@ type ChatMode =
   | 'confirma_campeao';
 
 const chatState: Map<string, ChatMode> = new Map();
+// Guarda o último dia (AAAA-MM-DD) em que já enviamos o menu para cada chat
+const lastMenuDayByChat: Map<string, string> = new Map();
 
 // ---------- CLIENT ----------
 const client = new Client({
@@ -20,7 +22,6 @@ const client = new Client({
   puppeteer: {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    // Se estiver usando puppeteer-core + Chrome do sistema, defina:
     // executablePath: '/usr/bin/google-chrome-stable'
   }
 });
@@ -41,12 +42,21 @@ const isAffirmative = (t: string) =>
 const isNegative = (t: string) =>
   /\b(n[ãa]o|nao|n|agora n[ãa]o|depois|prefiro n[ãa]o|negativo)\b/i.test(t);
 
+function currentDateInTZ(tz: string = 'America/Sao_Paulo'): string {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const y = parts.find(p => p.type === 'year')!.value;
+  const m = parts.find(p => p.type === 'month')!.value;
+  const d = parts.find(p => p.type === 'day')!.value;
+  return `${y}-${m}-${d}`; // AAAA-MM-DD
+}
+
 async function sendHorarios(chat: Chat) {
-  // IMPORTANTE: garanta que o horarios.pdf esteja UMA pasta acima do dist/
-  // Ex.: projeto/
-  //  ├─ src/
-  //  ├─ dist/
-  //  └─ horarios.pdf
   const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
   if (fs.existsSync(mediaPath)) {
     const media = MessageMedia.fromFilePath(mediaPath);
@@ -63,8 +73,8 @@ async function backToMenu(msg: Message) {
   chatState.set(msg.from, 'aguardando_opcao');
 }
 
+// ---------- BOOT ----------
 client.on('qr', (qr: string) => {
-
   console.log('QR recebido, escaneie para autenticar:');
   qrcode.generate(qr, { small: true });
 });
@@ -73,6 +83,7 @@ client.on('ready', () => {
   console.log('Robô pronto para funcionar');
 });
 
+// ---------- CORE: 1ª mensagem do dia manda o menu ----------
 client.on('message', async (msg: Message) => {
   // Somente em chats privados
   if (!msg.from.endsWith('@c.us')) return;
@@ -80,8 +91,30 @@ client.on('message', async (msg: Message) => {
   const chatId = msg.from;
   const text = msg.body.trim();
   const lower = text.toLowerCase();
-  const estadoAtual = chatState.get(chatId) ?? 'normal';
   const chat: Chat = await msg.getChat();
+
+  // Inicializa estado explícito como "normal" se for a 1ª interação do chat
+  if (!chatState.get(chatId)) {
+    chatState.set(chatId, 'normal');
+  }
+
+  // 1) Envia o menu se for a primeira mensagem DO DIA (por chat)
+  const today = currentDateInTZ('America/Sao_Paulo');
+  const lastDay = lastMenuDayByChat.get(chatId);
+
+  if (lastDay !== today) {
+    await sendWelcomeMenu(msg);
+    lastMenuDayByChat.set(chatId, today);
+
+    // garante que, se estava "normal", já fica aguardando opção
+    const estado = chatState.get(chatId) ?? 'normal';
+    if (estado === 'normal') {
+      chatState.set(chatId, 'aguardando_opcao');
+    }
+  }
+
+  // 2) Carrega o estado atual para seguir o fluxo
+  let estadoAtual = chatState.get(chatId) ?? 'normal';
 
   // /menu a qualquer momento
   if (/^(menu)$/.test(lower)) {
@@ -180,13 +213,6 @@ client.on('message', async (msg: Message) => {
     }
     return;
   }
-
-  // -------- SAUDAÇÃO INICIAL --------
-  if (/^(oi|olá|ola|dia|tarde|noite|jonny|jhony|jony|jhonny)$/.test(lower)) {
-    await sendWelcomeMenu(msg);
-    chatState.set(chatId, 'aguardando_opcao');
-    return;
-  }
 });
 
 // ---------- MENSAGENS ----------
@@ -196,7 +222,7 @@ async function sendWelcomeMenu(msg: Message): Promise<void> {
   const nome = contact.pushname?.split(' ')[0] || 'amigo';
 
   await chat.sendStateTyping();
-  await delay(800);
+  await delay(300);
   await chat.sendMessage(
     `Olá ${nome}, bem-vindo ao CT Jhonny Alves! 🤖\n` +
     `Serei seu assistente virtual. Se quiser ver o menu novamente, digite *menu*.\n\n` +
@@ -252,7 +278,6 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
       await chat.sendMessage(resposta);
       await sendHorarios(chat);
       await chat.markUnread();
-
       chatState.set(chatId, 'normal');
       break;
     }
@@ -284,9 +309,10 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
     }
 
     case '6': {
-      await chat.sendMessage('Ok! Assim que possível, um de nossos professores irá entrar em contato')
-      chatState.set(chatId, 'normal')
-      await chat.markUnread()
+      await chat.sendMessage('Ok! Assim que possível, um de nossos professores irá entrar em contato');
+      chatState.set(chatId, 'normal');
+      await chat.markUnread();
+      break; // corrigido
     }
 
     case '0': {
