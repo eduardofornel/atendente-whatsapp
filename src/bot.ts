@@ -1,7 +1,25 @@
-import { Client, LocalAuth, Message, Chat, Contact, MessageMedia } from 'whatsapp-web.js';
+import { Client, LocalAuth, Message, MessageMedia } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import path from 'path';
 import fs from 'fs';
+
+// ---------- AJUSTES DE PUPPETEER PARA VM ----------
+const PUPPETEER_ARGS = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-gpu',
+  '--disable-dev-shm-usage',
+  '--disable-extensions',
+  '--disable-accelerated-2d-canvas',
+  '--no-zygote',
+  '--mute-audio',
+  '--no-first-run',
+  '--no-default-browser-check',
+];
+
+// Ative/desative efeitos visuais sem custo alto
+const ENABLE_TYPING = false;
+const ENABLE_MARK_UNREAD = false;
 
 // ---------- ESTADOS ----------
 type ChatMode =
@@ -13,23 +31,21 @@ type ChatMode =
   | 'confirma_campeao'
   | 'confirma_gpass';
 
-const chatState: Map<string, ChatMode> = new Map();
-// Guarda o último dia (AAAA-MM-DD) em que já enviamos o menu para cada chat
-const lastMenuDayByChat: Map<string, string> = new Map();
+const chatState = new Map<string, ChatMode>();
+const lastMenuDayByChat = new Map<string, string>();
 
 // ---------- CLIENT ----------
 const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    // executablePath: '/usr/bin/google-chrome-stable'
-  }
+    args: PUPPETEER_ARGS,
+    // executablePath: process.env.CHROMIUM_PATH, // opcional: aponte pro Chrome do sistema
+  },
+  // webVersionCache: { type: 'memory' }, // (opcional) menor I/O que 'local'
 });
 
 // ---------- HELPERS ----------
-const delay = (ms: number): Promise<void> => new Promise(res => setTimeout(res, ms));
-
 const PAGAMENTOS =
   `*Pagamentos*:\n` +
   `Todos os pagamentos devem ser feitos para:\n` +
@@ -37,35 +53,38 @@ const PAGAMENTOS =
   `Titular: João Pedro Alves Santana (Banco Sicred)\n\n` +
   `Se quiser ver as opções novamente é só digitar "menu"😉`;
 
-const isAffirmative = (t: string) =>
-  /\b(sim|s|quero|claro|ok|blz|beleza|bora|vamos|perfeito|top|quero sim|yes|yep)\b/i.test(t);
+// Regex pré-compiladas
+const RE_MENU = /^(menu)$/i;
+const RE_NUM = /^[0-6]$/;
+const RE_INICIANTE = /iniciante/i;
+const RE_LUTADOR = /lutador/i;
+const RE_CAMPEAO = /campe(ã|a)o|campeao/i;
+const RE_GYMPASS = /(gympass|wellhub|welhub|gimpass|ginpass|ginpas|gympas|gimpas)/i;
+const RE_AFFIRM = /\b(sim|s|quero|claro|ok|blz|beleza|bora|vamos|perfeito|top|quero sim|yes|yep)\b/i;
+const RE_NEG = /\b(n[ãa]o|nao|n|agora n[ãa]o|depois|prefiro n[ãa]o|negativo)\b/i;
 
-const isNegative = (t: string) =>
-  /\b(n[ãa]o|nao|n|agora n[ãa]o|depois|prefiro n[ãa]o|negativo)\b/i.test(t);
+const currentDateInTZ = (tz = 'America/Sao_Paulo'): string =>
+  new Date().toLocaleDateString('en-CA', { timeZone: tz }); // AAAA-MM-DD
 
-function currentDateInTZ(tz: string = 'America/Sao_Paulo'): string {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const y = parts.find(p => p.type === 'year')!.value;
-  const m = parts.find(p => p.type === 'month')!.value;
-  const d = parts.find(p => p.type === 'day')!.value;
-  return `${y}-${m}-${d}`; // AAAA-MM-DD
-}
-
-async function sendHorarios(chat: Chat) {
+// Cache global do PDF (evita I/O a cada envio)
+let HORARIOS_MEDIA: MessageMedia | null = null;
+function ensureHorariosLoaded() {
+  if (HORARIOS_MEDIA) return;
   const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
   if (fs.existsSync(mediaPath)) {
-    const media = MessageMedia.fromFilePath(mediaPath);
-    await tryTyping(chat);
-    await chat.sendMessage('*Segue a planilha de horários em PDF:*');
-    await chat.sendMessage(media);
+    HORARIOS_MEDIA = MessageMedia.fromFilePath(mediaPath);
   } else {
-    await chat.sendMessage('⚠️ Arquivo de horários não encontrado no servidor.');
+    HORARIOS_MEDIA = null;
+  }
+}
+
+async function sendHorariosQuick(msg: Message) {
+  ensureHorariosLoaded();
+  if (HORARIOS_MEDIA) {
+    await msg.reply('*Segue a planilha de horários em PDF:*');
+    await msg.reply(HORARIOS_MEDIA);
+  } else {
+    await msg.reply('⚠️ Arquivo de horários não encontrado no servidor.');
   }
 }
 
@@ -75,12 +94,14 @@ async function backToMenu(msg: Message) {
   chatState.set(msg.from, 'aguardando_opcao');
 }
 
-// Helpers “seguros” para evitar exceções em ambientes onde typing/unread falham
-async function tryTyping(chat: Chat) {
-  try { await chat.sendStateTyping(); } catch { /* ignora erro */ }
+// Helpers “seguros” (desligados por padrão)
+async function tryTyping(msg: Message) {
+  if (!ENABLE_TYPING) return;
+  try { const chat = await msg.getChat(); await chat.sendStateTyping(); } catch {}
 }
-async function tryMarkUnread(chat: Chat) {
-  try { await chat.markUnread(); } catch { /* ignora erro */ }
+async function tryMarkUnread(msg: Message) {
+  if (!ENABLE_MARK_UNREAD) return;
+  try { const chat = await msg.getChat(); await chat.markUnread(); } catch {}
 }
 
 // ---------- BOOT ----------
@@ -91,175 +112,164 @@ client.on('qr', (qr: string) => {
 
 client.on('ready', () => {
   console.log('Robô pronto para funcionar');
+  ensureHorariosLoaded(); // carrega mídia 1x
 });
 
-// ---------- CORE: 1ª mensagem do dia manda o menu ----------
+// ---------- CORE ----------
 client.on('message', async (msg: Message) => {
-  // Somente em chats privados
-  if (!msg.from.endsWith('@c.us')) return;
+  try {
+    // Somente em chats privados
+    if (!msg.from.endsWith('@c.us')) return;
 
-  const chatId = msg.from;
-  const text = msg.body.trim();
-  const lower = text.toLowerCase();
-  const chat: Chat = await msg.getChat();
+    const chatId = msg.from;
+    const textRaw = msg.body || '';
+    const text = textRaw.trim();
+    const lower = text.toLowerCase();
 
-  // Inicializa estado explícito como "normal" se for a 1ª interação do chat
-  if (!chatState.get(chatId)) {
-    chatState.set(chatId, 'normal');
-  }
+    // estado default
+    if (!chatState.has(chatId)) chatState.set(chatId, 'normal');
 
-  // 1) Envia o menu se for a primeira mensagem DO DIA (por chat)
-  const today = currentDateInTZ('America/Sao_Paulo');
-  const lastDay = lastMenuDayByChat.get(chatId);
+    // 1) 1ª mensagem do dia -> manda menu e encerra processamento
+    const today = currentDateInTZ();
+    if (lastMenuDayByChat.get(chatId) !== today) {
+      await sendWelcomeMenu(msg);           // 1 mensagem (sem getContact)
+      lastMenuDayByChat.set(chatId, today);
+      if (chatState.get(chatId) === 'normal') chatState.set(chatId, 'aguardando_opcao');
+      return; // evita cair no restante do fluxo
+    }
 
-  if (lastDay !== today) {
-    await sendWelcomeMenu(msg);
-    lastMenuDayByChat.set(chatId, today);
+    // 2) fluxo normal
+    let estadoAtual = chatState.get(chatId) as ChatMode;
 
-    // garante que, se estava "normal", já fica aguardando opção
-    const estado = chatState.get(chatId) ?? 'normal';
-    if (estado === 'normal') {
+    // /menu a qualquer momento
+    if (RE_MENU.test(lower)) {
+      await sendMenu(msg);
       chatState.set(chatId, 'aguardando_opcao');
-    }
-  }
-
-  // 2) Carrega o estado atual para seguir o fluxo
-  let estadoAtual = chatState.get(chatId) ?? 'normal';
-
-  // /menu a qualquer momento
-  if (/^(menu)$/.test(lower)) {
-    await tryTyping(chat);
-    await sendMenu(msg);
-    chatState.set(chatId, 'aguardando_opcao');
-    return;
-  }
-
-  // -------- CONFIRMAÇÕES POR PLANO --------
-  if (estadoAtual === 'confirma_iniciante') {
-    if (isAffirmative(lower)) {
-      await tryTyping(chat);
-      await chat.sendMessage(
-        'Boa decisão! 🎯 A *aula experimental* é a melhor forma de sentir o ritmo e conhecer os professores. ' +
-        'Dá pra ajustar a intensidade, tirar dúvidas e achar o melhor horário pra você.\n\nVou te mandar a planilha de horários:'
-      );
-      await sendHorarios(chat);
-      await tryTyping(chat);
-      await chat.sendMessage(PAGAMENTOS);
-      await tryMarkUnread(chat);
-      chatState.set(chatId, 'normal');
       return;
-    }
-    if (isNegative(lower)) {
-      await tryMarkUnread(chat);
-      await backToMenu(msg);
-      return;
-    }
-    await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
-    return;
-  }
-
-  if (estadoAtual === 'confirma_lutador') {
-    if (isAffirmative(lower)) {
-      await sendHorarios(chat);
-      await tryTyping(chat);
-      await chat.sendMessage(PAGAMENTOS);
-      await tryMarkUnread(chat);
-      chatState.set(chatId, 'normal');
-      return;
-    }
-    if (isNegative(lower)) {
-      await tryMarkUnread(chat);
-      await backToMenu(msg);
-      return;
-    }
-    await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
-    return;
-  }
-
-  if (estadoAtual === 'confirma_campeao') {
-    if (isAffirmative(lower)) {
-      await sendHorarios(chat);
-      await tryTyping(chat);
-      await chat.sendMessage(PAGAMENTOS);
-      await tryMarkUnread(chat);
-      chatState.set(chatId, 'normal');
-      return;
-    }
-    if (isNegative(lower)) {
-      await tryMarkUnread(chat);
-      await backToMenu(msg);
-      return;
-    }
-    await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
-    return;
-  }
-
-  if (estadoAtual === 'confirma_gpass') {
-    if (isAffirmative(lower)) {
-      await tryTyping(chat);
-      await chat.sendMessage('Que ótimo!!! Ficamos felizes em ter você conosco. Irei te mandar a planilha de horários para que possa marcar sua aula');
-      await sendHorarios(chat);
-      await tryMarkUnread(chat);
-      chatState.set(chatId, 'normal');
-      return;
-    }
-    if (isNegative(lower)) {
-      await tryMarkUnread(chat);
-      await backToMenu(msg);
-      return;
-    }
-    await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
-    return;
-  }
-
-  // -------- FLUXO DE ESCOLHA DO PLANO (NOMES) --------
-  if (estadoAtual === 'aguardando_plano') {
-    if (/(iniciante)/i.test(lower)) {
-      await msg.reply('Curtiu o *Iniciante*. Quer marcar uma *aula experimental*?');
-      chatState.set(chatId, 'confirma_iniciante');
-      return;
-    }
-    if (/(lutador)/i.test(lower)) {
-      await msg.reply('Show! Plano *Lutador*. Quer que eu já te mande os *horários*?');
-      chatState.set(chatId, 'confirma_lutador');
-      return;
-    }
-    if (/(campe(ã|a)o|campeao)/i.test(lower)) {
-      await msg.reply('Top! Plano *Campeão*. Quer que eu te mande a *planilha de horários*?');
-      chatState.set(chatId, 'confirma_campeao');
-      return;
-    }
-    if (/(gympass|wellhub|welhub|gimpass|ginpass|ginpas|gympas|gimpas)/i.test(lower)) {
-      await msg.reply('Fico muito feliz que tenha nos encontrado pelo Wellhub/Gympass! Quer que eu te mande a *planilha de horários*?');
-      chatState.set(chatId, 'confirma_gpass');
-      return; // importante para não cair no "não entendi"
     }
 
-    await msg.reply('Não entendi 🤔. Diga o *nome* de um plano (Iniciante, Lutador, Campeão) ou digite *menu*.');
-    return;
-  }
-
-  // -------- FLUXO DE ESCOLHA DO MENU (NÚMEROS) --------
-  if (estadoAtual === 'aguardando_opcao') {
-    if (/^[0-6]$/.test(text)) {
-      await handleMenuOption(msg, text); // esta função também ajusta o estado
-    } else {
-      await msg.reply('Por favor, digite um número de 0 a 6 ou *menu* para ver o menu.');
+    // -------- CONFIRMAÇÕES --------
+    if (estadoAtual === 'confirma_iniciante') {
+      if (RE_AFFIRM.test(lower)) {
+        await tryTyping(msg);
+        await msg.reply(
+          'Boa decisão! 🎯 A *aula experimental* é a melhor forma de sentir o ritmo e conhecer os professores.\n' +
+          'Dá pra ajustar a intensidade, tirar dúvidas e achar o melhor horário pra você.\n\nVou te mandar a planilha de horários:'
+        );
+        await sendHorariosQuick(msg);
+        await msg.reply(PAGAMENTOS);
+        await tryMarkUnread(msg);
+        chatState.set(chatId, 'normal');
+        return;
+      }
+      if (RE_NEG.test(lower)) {
+        await tryMarkUnread(msg);
+        await backToMenu(msg);
+        return;
+      }
+      await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
+      return;
     }
-    return;
+
+    if (estadoAtual === 'confirma_lutador') {
+      if (RE_AFFIRM.test(lower)) {
+        await sendHorariosQuick(msg);
+        await msg.reply(PAGAMENTOS);
+        await tryMarkUnread(msg);
+        chatState.set(chatId, 'normal');
+        return;
+      }
+      if (RE_NEG.test(lower)) {
+        await tryMarkUnread(msg);
+        await backToMenu(msg);
+        return;
+      }
+      await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
+      return;
+    }
+
+    if (estadoAtual === 'confirma_campeao') {
+      if (RE_AFFIRM.test(lower)) {
+        await sendHorariosQuick(msg);
+        await msg.reply(PAGAMENTOS);
+        await tryMarkUnread(msg);
+        chatState.set(chatId, 'normal');
+        return;
+      }
+      if (RE_NEG.test(lower)) {
+        await tryMarkUnread(msg);
+        await backToMenu(msg);
+        return;
+      }
+      await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
+      return;
+    }
+
+    if (estadoAtual === 'confirma_gpass') {
+      if (RE_AFFIRM.test(lower)) {
+        await msg.reply('Que ótimo!!! Ficamos felizes em ter você conosco. Vou te mandar a planilha de horários para que possa marcar sua aula.');
+        await sendHorariosQuick(msg);
+        await tryMarkUnread(msg);
+        chatState.set(chatId, 'normal');
+        return;
+      }
+      if (RE_NEG.test(lower)) {
+        await tryMarkUnread(msg);
+        await backToMenu(msg);
+        return;
+      }
+      await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
+      return;
+    }
+
+    // -------- FLUXO DE ESCOLHA DO PLANO (NOMES) --------
+    if (estadoAtual === 'aguardando_plano') {
+      if (RE_INICIANTE.test(lower)) {
+        await msg.reply('Curtiu o *Iniciante*. Quer marcar uma *aula experimental*?');
+        chatState.set(chatId, 'confirma_iniciante');
+        return;
+      }
+      if (RE_LUTADOR.test(lower)) {
+        await msg.reply('Show! Plano *Lutador*. Quer que eu já te mande os *horários*?');
+        chatState.set(chatId, 'confirma_lutador');
+        return;
+      }
+      if (RE_CAMPEAO.test(lower)) {
+        await msg.reply('Top! Plano *Campeão*. Quer que eu te mande a *planilha de horários*?');
+        chatState.set(chatId, 'confirma_campeao');
+        return;
+      }
+      if (RE_GYMPASS.test(lower)) {
+        await msg.reply('Fico muito feliz que tenha nos encontrado pelo Wellhub/Gympass! Quer que eu te mande a *planilha de horários*?');
+        chatState.set(chatId, 'confirma_gpass');
+        return;
+      }
+
+      await msg.reply('Não entendi 🤔. Diga o *nome* de um plano (Iniciante, Lutador, Campeão) ou digite *menu*.');
+      return;
+    }
+
+    // -------- FLUXO DE ESCOLHA DO MENU (NÚMEROS) --------
+    if (estadoAtual === 'aguardando_opcao') {
+      if (RE_NUM.test(text)) {
+        await handleMenuOption(msg, text);
+      } else {
+        await msg.reply('Por favor, digite um número de 0 a 6 ou *menu* para ver o menu.');
+      }
+      return;
+    }
+
+  } catch (err) {
+    console.error('[BOT][on message] erro inesperado:', err);
   }
 });
 
 // ---------- MENSAGENS ----------
 async function sendWelcomeMenu(msg: Message): Promise<void> {
-  const chat: Chat = await msg.getChat();
-  const contact: Contact = await msg.getContact();
-  const nome = contact.pushname?.split(' ')[0] || 'amigo';
-
-  await tryTyping(chat);
-  await chat.sendMessage(
-    `Olá ${nome}, bem-vindo ao CT Jhonny Alves! 🤖\n` +
-    `Serei seu assistente virtual. Se quiser ver o menu novamente, digite *menu*.\n\n` +
+  // Sem getContact (mais barato). Se quiser nome, busque só quando necessário.
+  await msg.reply(
+    `Olá! 🤖 Bem-vindo ao CT Jhonny Alves!\n` +
+    `Se quiser ver o menu novamente, digite *menu*.\n\n` +
     `1 – Conhecer o CT\n` +
     `2 – Aula experimental\n` +
     `3 – Planos\n` +
@@ -271,8 +281,7 @@ async function sendWelcomeMenu(msg: Message): Promise<void> {
 }
 
 async function sendMenu(msg: Message): Promise<void> {
-  const chat: Chat = await msg.getChat();
-  await chat.sendMessage(
+  await msg.reply(
     `Menu:\n` +
     `1 – Conhecer o CT\n` +
     `2 – Aula experimental\n` +
@@ -286,7 +295,6 @@ async function sendMenu(msg: Message): Promise<void> {
 
 // ---------- MENU ----------
 async function handleMenuOption(msg: Message, option: string): Promise<void> {
-  const chat: Chat = await msg.getChat();
   const chatId = msg.from;
 
   switch (option) {
@@ -298,7 +306,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `Temos modalidades específicas para mulheres e crianças também\n\n` +
         `Siga nossa página no instagram @ctjhonnyalves (https://www.instagram.com/ctjhonnyalves)\n\n` +
         `Se quiser ver as opções novamente é só digitar *menu* 😉`;
-      await chat.sendMessage(resposta);
+      await msg.reply(resposta);
       chatState.set(chatId, 'normal');
       break;
     }
@@ -309,16 +317,16 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `Quando ficaria melhor pra você?\n` +
         `Pra te ajudar, vou te mandar a planilha de horários, só um instante.\n\n` +
         `Se quiser voltar ao menu é só digitar *menu* 😉`;
-      await chat.sendMessage(resposta);
-      await sendHorarios(chat);
-      await tryMarkUnread(chat);
+      await msg.reply(resposta);
+      await sendHorariosQuick(msg);
+      await tryMarkUnread(msg);
       chatState.set(chatId, 'normal');
       break;
     }
 
     case '3': {
       const resposta =
-        `Treine a hora que quiser!!! Aqui no CT trabalhamos com um sistema de agendamento para te trazer mais conforto e flexibilidade \n\n` +
+        `Treine a hora que quiser!!! Aqui no CT trabalhamos com um sistema de agendamento para te trazer mais conforto e flexibilidade.\n\n` +
         `*Planos Disponíveis*:\n` +
         `- Iniciante (R$99,00): 1 aula/semana\n` +
         `- Lutador (R$150,00): até 3 aulas/semana + descontos\n` +
@@ -327,32 +335,32 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `- Gympass/Wellhub: aceitamos a partir do *Plano Basic*, 3x semanais (somente uma modalidade)\n\n` +
         `Me conta *qual plano* te agrada mais (pode escrever o nome do plano).\n\n` +
         `Se quiser ver as opções novamente é só digitar *menu* 😉`;
-      await chat.sendMessage(resposta);
+      await msg.reply(resposta);
       chatState.set(chatId, 'aguardando_plano');
       break;
     }
 
     case '4': {
-      await sendHorarios(chat);
+      await sendHorariosQuick(msg);
       chatState.set(chatId, 'normal');
       break;
     }
 
     case '5': {
-      await chat.sendMessage(PAGAMENTOS);
+      await msg.reply(PAGAMENTOS);
       chatState.set(chatId, 'normal');
       break;
     }
 
     case '6': {
-      await chat.sendMessage('Ok! Assim que possível, um de nossos professores irá entrar em contato');
+      await msg.reply('Ok! Assim que possível, um de nossos professores irá entrar em contato.');
       chatState.set(chatId, 'normal');
-      await tryMarkUnread(chat);
-      break; // corrigido
+      await tryMarkUnread(msg);
+      break;
     }
 
     case '0': {
-      await chat.sendMessage('Encerrando atendimento. Se precisar de algo mais, digite *menu*.');
+      await msg.reply('Encerrando atendimento. Se precisar de algo mais, digite *menu*.');
       chatState.set(chatId, 'normal');
       break;
     }
