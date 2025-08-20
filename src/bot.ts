@@ -151,16 +151,19 @@ client.on('message', async (msg: Message) => {
     const today = currentDateInTZ('America/Sao_Paulo');
     const lastDay = lastMenuDayByChat.get(chatId);
 
-    if (lastDay !== today || isGreeting(text)) {
+    const isFirstMessageOfDay = lastDay !== today;
+    const isSaudacao = isGreeting(text);
+
+    // aqui ajustamos: se não tem body (áudio, imagem, sticker, etc.) e for a 1ª msg do dia → conta como 1ª do dia
+    if (isFirstMessageOfDay || isSaudacao || (!text && isFirstMessageOfDay)) {
       await sendWelcomeMenu(msg);
       lastMenuDayByChat.set(chatId, today);
 
-      // garante que, se estava "normal", já fica aguardando opção
       const estado = chatState.get(chatId) ?? 'normal';
       if (estado === 'normal') {
         chatState.set(chatId, 'aguardando_opcao');
       }
-      return; // evita processar a mesma mensagem
+      return;
     }
 
     // 2) Carrega o estado atual para seguir o fluxo
