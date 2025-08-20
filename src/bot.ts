@@ -61,7 +61,7 @@ async function sendHorarios(chat: Chat) {
   const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
   if (fs.existsSync(mediaPath)) {
     const media = MessageMedia.fromFilePath(mediaPath);
-    await chat.sendStateTyping();
+    await tryTyping(chat);
     await chat.sendMessage('*Segue a planilha de horários em PDF:*');
     await chat.sendMessage(media);
   } else {
@@ -73,6 +73,14 @@ async function backToMenu(msg: Message) {
   await msg.reply('Sem problema! Voltei para o menu pra você 👍');
   await sendMenu(msg);
   chatState.set(msg.from, 'aguardando_opcao');
+}
+
+// Helpers “seguros” para evitar exceções em ambientes onde typing/unread falham
+async function tryTyping(chat: Chat) {
+  try { await chat.sendStateTyping(); } catch { /* ignora erro */ }
+}
+async function tryMarkUnread(chat: Chat) {
+  try { await chat.markUnread(); } catch { /* ignora erro */ }
 }
 
 // ---------- BOOT ----------
@@ -120,7 +128,7 @@ client.on('message', async (msg: Message) => {
 
   // /menu a qualquer momento
   if (/^(menu)$/.test(lower)) {
-    await chat.sendStateTyping();
+    await tryTyping(chat);
     await sendMenu(msg);
     chatState.set(chatId, 'aguardando_opcao');
     return;
@@ -129,20 +137,20 @@ client.on('message', async (msg: Message) => {
   // -------- CONFIRMAÇÕES POR PLANO --------
   if (estadoAtual === 'confirma_iniciante') {
     if (isAffirmative(lower)) {
-      await chat.sendStateTyping();
+      await tryTyping(chat);
       await chat.sendMessage(
         'Boa decisão! 🎯 A *aula experimental* é a melhor forma de sentir o ritmo e conhecer os professores. ' +
         'Dá pra ajustar a intensidade, tirar dúvidas e achar o melhor horário pra você.\n\nVou te mandar a planilha de horários:'
       );
       await sendHorarios(chat);
-      await chat.sendStateTyping();
+      await tryTyping(chat);
       await chat.sendMessage(PAGAMENTOS);
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       await backToMenu(msg);
       return;
     }
@@ -153,14 +161,14 @@ client.on('message', async (msg: Message) => {
   if (estadoAtual === 'confirma_lutador') {
     if (isAffirmative(lower)) {
       await sendHorarios(chat);
-      await chat.sendStateTyping();
+      await tryTyping(chat);
       await chat.sendMessage(PAGAMENTOS);
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       await backToMenu(msg);
       return;
     }
@@ -171,34 +179,35 @@ client.on('message', async (msg: Message) => {
   if (estadoAtual === 'confirma_campeao') {
     if (isAffirmative(lower)) {
       await sendHorarios(chat);
-      await chat.sendStateTyping();
+      await tryTyping(chat);
       await chat.sendMessage(PAGAMENTOS);
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       await backToMenu(msg);
       return;
     }
+    await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
+    return;
   }
 
   if (estadoAtual === 'confirma_gpass') {
     if (isAffirmative(lower)) {
-      await chat.sendStateTyping();
-      await chat.sendMessage('Que ótimo!!! Ficamos felizes em ter você conosco. Irei te mandar a planilha de horários para que possa marcar sua aula')
+      await tryTyping(chat);
+      await chat.sendMessage('Que ótimo!!! Ficamos felizes em ter você conosco. Irei te mandar a planilha de horários para que possa marcar sua aula');
       await sendHorarios(chat);
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       await backToMenu(msg);
       return;
     }
-
     await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
     return;
   }
@@ -220,9 +229,10 @@ client.on('message', async (msg: Message) => {
       chatState.set(chatId, 'confirma_campeao');
       return;
     }
-    if (/(gympass|gpass|wellhub|welhub|gimpass|ginpass|ginpas|gympas|gimpas)/i.test(lower)) {
-      await msg.reply('Fico muito feliz que tenha nos encontrado pelo Wellhub/Gympass!!');
+    if (/(gympass|wellhub|welhub|gimpass|ginpass|ginpas|gympas|gimpas)/i.test(lower)) {
+      await msg.reply('Fico muito feliz que tenha nos encontrado pelo Wellhub/Gympass! Quer que eu te mande a *planilha de horários*?');
       chatState.set(chatId, 'confirma_gpass');
+      return; // importante para não cair no "não entendi"
     }
 
     await msg.reply('Não entendi 🤔. Diga o *nome* de um plano (Iniciante, Lutador, Campeão) ou digite *menu*.');
@@ -246,7 +256,7 @@ async function sendWelcomeMenu(msg: Message): Promise<void> {
   const contact: Contact = await msg.getContact();
   const nome = contact.pushname?.split(' ')[0] || 'amigo';
 
-  await chat.sendStateTyping();
+  await tryTyping(chat);
   await chat.sendMessage(
     `Olá ${nome}, bem-vindo ao CT Jhonny Alves! 🤖\n` +
     `Serei seu assistente virtual. Se quiser ver o menu novamente, digite *menu*.\n\n` +
@@ -301,7 +311,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `Se quiser voltar ao menu é só digitar *menu* 😉`;
       await chat.sendMessage(resposta);
       await sendHorarios(chat);
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       chatState.set(chatId, 'normal');
       break;
     }
@@ -309,12 +319,13 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
     case '3': {
       const resposta =
         `Treine a hora que quiser!!! Aqui no CT trabalhamos com um sistema de agendamento para te trazer mais conforto e flexibilidade \n\n` +
-        `*Planos Disponíveis*:\n- Iniciante (R$99,00): 1 aula/semana\n` +
-        `- Lutador* (R$150,00): até 3 aulas/semana + descontos\n` +
+        `*Planos Disponíveis*:\n` +
+        `- Iniciante (R$99,00): 1 aula/semana\n` +
+        `- Lutador (R$150,00): até 3 aulas/semana + descontos\n` +
         `- Campeão (R$260,00): ilimitado + 1 personal/mês + descontos familiares\n` +
-        `- Universitário (R$79,90): 4 aulas/semana + descontos\n\n` +
-        `- Gympass/WellHub: Aceitamos a partir do Plano Basic, 3x semanais (Somente uma Modalidade)\n\n ` +
-        `Me sconta *qual plano* te agrada mais (pode escrever o nome do plano).\n\n` +
+        `- Universitário (R$79,90): 4 aulas/semana + descontos\n` +
+        `- Gympass/Wellhub: aceitamos a partir do *Plano Basic*, 3x semanais (somente uma modalidade)\n\n` +
+        `Me conta *qual plano* te agrada mais (pode escrever o nome do plano).\n\n` +
         `Se quiser ver as opções novamente é só digitar *menu* 😉`;
       await chat.sendMessage(resposta);
       chatState.set(chatId, 'aguardando_plano');
@@ -336,7 +347,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
     case '6': {
       await chat.sendMessage('Ok! Assim que possível, um de nossos professores irá entrar em contato');
       chatState.set(chatId, 'normal');
-      await chat.markUnread();
+      await tryMarkUnread(chat);
       break; // corrigido
     }
 
