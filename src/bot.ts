@@ -255,7 +255,7 @@ client.on('message', async (msg: Message) => {
         return;
       }
       if (/(gympass|wellhub|welhub|gimpass|ginpass|ginpas|gympas|gimpas)/i.test(lower)) {
-        await chat.sendMessage('Fico muito feliz que tenha nos encontrado pelo Wellhub/Gympass!!');
+        await chat.sendMessage('Fico muito feliz que tenha nos encontrado pelo Wellhub/Gympass!!Quer marcar uma aula?');
         chatState.set(chatId, 'confirma_gpass');
         return; // evita cair no "não entendi"
       }
