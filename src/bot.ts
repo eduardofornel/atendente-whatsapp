@@ -10,7 +10,8 @@ type ChatMode =
   | 'aguardando_plano'
   | 'confirma_iniciante'
   | 'confirma_lutador'
-  | 'confirma_campeao';
+  | 'confirma_campeao'
+  | 'confirma_gpass';
 
 const chatState: Map<string, ChatMode> = new Map();
 // Guarda o último dia (AAAA-MM-DD) em que já enviamos o menu para cada chat
@@ -60,6 +61,7 @@ async function sendHorarios(chat: Chat) {
   const mediaPath = path.join(__dirname, '..', 'horarios.pdf');
   if (fs.existsSync(mediaPath)) {
     const media = MessageMedia.fromFilePath(mediaPath);
+    await chat.sendStateTyping();
     await chat.sendMessage('*Segue a planilha de horários em PDF:*');
     await chat.sendMessage(media);
   } else {
@@ -118,6 +120,7 @@ client.on('message', async (msg: Message) => {
 
   // /menu a qualquer momento
   if (/^(menu)$/.test(lower)) {
+    await chat.sendStateTyping();
     await sendMenu(msg);
     chatState.set(chatId, 'aguardando_opcao');
     return;
@@ -126,18 +129,19 @@ client.on('message', async (msg: Message) => {
   // -------- CONFIRMAÇÕES POR PLANO --------
   if (estadoAtual === 'confirma_iniciante') {
     if (isAffirmative(lower)) {
+      await chat.sendStateTyping();
       await chat.sendMessage(
         'Boa decisão! 🎯 A *aula experimental* é a melhor forma de sentir o ritmo e conhecer os professores. ' +
         'Dá pra ajustar a intensidade, tirar dúvidas e achar o melhor horário pra você.\n\nVou te mandar a planilha de horários:'
       );
       await sendHorarios(chat);
+      await chat.sendStateTyping();
       await chat.sendMessage(PAGAMENTOS);
       await chat.markUnread();
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
-      await chat.sendMessage(PAGAMENTOS);
       await chat.markUnread();
       await backToMenu(msg);
       return;
@@ -149,13 +153,13 @@ client.on('message', async (msg: Message) => {
   if (estadoAtual === 'confirma_lutador') {
     if (isAffirmative(lower)) {
       await sendHorarios(chat);
+      await chat.sendStateTyping();
       await chat.sendMessage(PAGAMENTOS);
       await chat.markUnread();
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
-      await chat.sendMessage(PAGAMENTOS);
       await chat.markUnread();
       await backToMenu(msg);
       return;
@@ -167,17 +171,34 @@ client.on('message', async (msg: Message) => {
   if (estadoAtual === 'confirma_campeao') {
     if (isAffirmative(lower)) {
       await sendHorarios(chat);
+      await chat.sendStateTyping();
       await chat.sendMessage(PAGAMENTOS);
       await chat.markUnread();
       chatState.set(chatId, 'normal');
       return;
     }
     if (isNegative(lower)) {
-      await chat.sendMessage(PAGAMENTOS);
       await chat.markUnread();
       await backToMenu(msg);
       return;
     }
+  }
+
+  if (estadoAtual === 'confirma_gpass') {
+    if (isAffirmative(lower)) {
+      await chat.sendStateTyping();
+      await chat.sendMessage('Que ótimo!!! Ficamos felizes em ter você conosco. Irei te mandar a planilha de horários para que possa marcar sua aula')
+      await sendHorarios(chat);
+      await chat.markUnread();
+      chatState.set(chatId, 'normal');
+      return;
+    }
+    if (isNegative(lower)) {
+      await chat.markUnread();
+      await backToMenu(msg);
+      return;
+    }
+
     await msg.reply('Responde com *sim* ou *não*, por favor. (ou digite *menu* para voltar)');
     return;
   }
@@ -198,6 +219,10 @@ client.on('message', async (msg: Message) => {
       await msg.reply('Top! Plano *Campeão*. Quer que eu te mande a *planilha de horários*?');
       chatState.set(chatId, 'confirma_campeao');
       return;
+    }
+    if (/(gympass|gpass|wellhub|welhub|gimpass|ginpass|ginpas|gympas|gimpas)/i.test(lower)) {
+      await msg.reply('Fico muito feliz que tenha nos encontrado pelo Wellhub/Gympass!!');
+      chatState.set(chatId, 'confirma_gpass');
     }
 
     await msg.reply('Não entendi 🤔. Diga o *nome* de um plano (Iniciante, Lutador, Campeão) ou digite *menu*.');
@@ -222,7 +247,6 @@ async function sendWelcomeMenu(msg: Message): Promise<void> {
   const nome = contact.pushname?.split(' ')[0] || 'amigo';
 
   await chat.sendStateTyping();
-  await delay(300);
   await chat.sendMessage(
     `Olá ${nome}, bem-vindo ao CT Jhonny Alves! 🤖\n` +
     `Serei seu assistente virtual. Se quiser ver o menu novamente, digite *menu*.\n\n` +
@@ -286,10 +310,11 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
       const resposta =
         `Treine a hora que quiser!!! Aqui no CT trabalhamos com um sistema de agendamento para te trazer mais conforto e flexibilidade \n\n` +
         `*Planos Disponíveis*:\n- Iniciante (R$99,00): 1 aula/semana\n` +
-        `- Lutador (R$150,00): até 3 aulas/semana + descontos\n` +
+        `- Lutador* (R$150,00): até 3 aulas/semana + descontos\n` +
         `- Campeão (R$260,00): ilimitado + 1 personal/mês + descontos familiares\n` +
-        `- Universitário (R$79,90): 4 aulas/semana + descontos (exclusivo UFU)\n\n` +
-        `Me conta *qual plano* te agrada mais (pode escrever o nome).\n\n` +
+        `- Universitário (R$79,90): 4 aulas/semana + descontos\n\n` +
+        `- Gympass/WellHub: Aceitamos a partir do Plano Basic, 3x semanais (Somente uma Modalidade)\n\n ` +
+        `Me sconta *qual plano* te agrada mais (pode escrever o nome do plano).\n\n` +
         `Se quiser ver as opções novamente é só digitar *menu* 😉`;
       await chat.sendMessage(resposta);
       chatState.set(chatId, 'aguardando_plano');
