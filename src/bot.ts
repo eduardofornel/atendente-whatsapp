@@ -71,6 +71,21 @@ function currentDateInTZ(tz: string = 'America/Sao_Paulo'): string {
   return `${y}-${m}-${d}`; // AAAA-MM-DD
 }
 
+// Normalização e saudação (ignora acentos e especiais)
+function normalizeText(text: string): string {
+  return (text || '')
+    .normalize('NFD')                 // separa acentos
+    .replace(/[\u0300-\u036f]/g, '')  // remove diacríticos
+    .replace(/[^a-z0-9\s]/gi, '')     // remove especiais
+    .toLowerCase()
+    .trim();
+}
+
+function isGreeting(text: string): boolean {
+  const t = normalizeText(text);
+  return /\b(oi|ola|opa|bom dia|boa tarde|boa noite|eai|iae|salve|fala|hey|hello|hi)\b/.test(t);
+}
+
 // Cache do PDF para evitar I/O a cada envio
 let HORARIOS_MEDIA: MessageMedia | null = null;
 function ensureHorariosLoaded() {
@@ -92,7 +107,6 @@ async function sendHorarios(chat: Chat) {
 
 async function backToMenu(msg: Message) {
   const chat = await msg.getChat();
-  await chat.sendMessage('Sem problema! Voltei para o menu pra você 👍');
   await sendMenu(msg);
   chatState.set(msg.from, 'aguardando_opcao');
 }
@@ -116,7 +130,7 @@ client.on('ready', () => {
   ensureHorariosLoaded();
 });
 
-// ---------- CORE: 1ª mensagem do dia manda o menu ----------
+// ---------- CORE: 1ª mensagem do dia OU saudação manda o menu ----------
 client.on('message', async (msg: Message) => {
   try {
     // Somente em chats privados
@@ -125,6 +139,7 @@ client.on('message', async (msg: Message) => {
     const chatId = msg.from;
     const text = (msg.body || '').trim();
     const lower = text.toLowerCase();
+    const normalized = normalizeText(text);
     const chat: Chat = await msg.getChat();
 
     // Inicializa estado explícito como "normal" se for a 1ª interação do chat
@@ -132,11 +147,11 @@ client.on('message', async (msg: Message) => {
       chatState.set(chatId, 'normal');
     }
 
-    // 1) Envia o menu se for a primeira mensagem DO DIA (por chat)
+    // 1) Envia o menu se for a primeira mensagem DO DIA (por chat) OU se veio saudação
     const today = currentDateInTZ('America/Sao_Paulo');
     const lastDay = lastMenuDayByChat.get(chatId);
 
-    if (lastDay !== today) {
+    if (lastDay !== today || isGreeting(text)) {
       await sendWelcomeMenu(msg);
       lastMenuDayByChat.set(chatId, today);
 
@@ -151,8 +166,8 @@ client.on('message', async (msg: Message) => {
     // 2) Carrega o estado atual para seguir o fluxo
     let estadoAtual = chatState.get(chatId) ?? 'normal';
 
-    // /menu a qualquer momento
-    if (/^(menu)$/i.test(lower)) {
+    // /menu a qualquer momento (usando texto normalizado)
+    if (normalized === 'menu') {
       await tryTyping(chat);
       await sendMenu(msg);
       chatState.set(chatId, 'aguardando_opcao');
@@ -350,7 +365,7 @@ async function handleMenuOption(msg: Message, option: string): Promise<void> {
         `*Planos Disponíveis*:\n- Iniciante (R$99,00): 1 aula/semana\n` +
         `- Lutador* (R$150,00): até 3 aulas/semana + descontos\n` +
         `- Campeão (R$260,00): ilimitado + 1 personal/mês + descontos familiares\n` +
-        `- Universitário (R$79,90): 4 aulas/semana + descontos\n` +
+        `- Universitário (R$79,90): 4 aulas/semana + descontos\n\n` +
         `- Gympass/WellHub: Aceitamos a partir do Plano Basic, 3x semanais (Somente uma Modalidade)\n\n ` +
         `Me sconta *qual plano* te agrada mais (pode escrever o nome do plano).\n\n` +
         `Se quiser ver as opções novamente é só digitar *menu* 😉`;
