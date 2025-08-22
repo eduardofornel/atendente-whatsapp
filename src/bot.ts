@@ -19,18 +19,15 @@ const lastMenuDayByChat: Map<string, string> = new Map();
 
 // ---------- CLIENT ----------
 const PUPPETEER_ARGS = [
-  '--no-sandbox',
-  '--disable-setuid-sandbox',
-  '--disable-gpu',
-  '--disable-dev-shm-usage',
-  '--disable-extensions',
-  '--disable-accelerated-2d-canvas',
-  '--no-zygote',
-  '--mute-audio',
-  '--no-first-run',
-  '--no-default-browser-check',
-  // '--single-process', // se ficar instável, mantenha comentado
+  '--no-sandbox',              // roda sem sandbox (necessário em server sem userns)
+  '--disable-setuid-sandbox',  // complementa o no-sandbox
+  '--disable-dev-shm-usage',   // evita usar /dev/shm (pequeno em instâncias pequenas)
+  '--no-zygote',               // evita criar processo zygote
+  '--disable-gpu',             // desabilita GPU (não tem utilidade em server headless)
+  '--mute-audio',              // evita problemas com áudio
+  '--disable-extensions',      // não carrega extensões
 ];
+
 
 const client = new Client({
   authStrategy: new LocalAuth(),
